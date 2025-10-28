@@ -95,7 +95,8 @@ impl PathValidator {
         let path_lower = path_str.to_lowercase();
         
         // SECURITY: Ensure canonicalization didn't result in UNC path
-        if path_str.starts_with("\\\\") {
+        // BUT allow Windows extended-length paths (\\?\C:\...)
+        if path_str.starts_with("\\\\") && !path_str.starts_with("\\\\?\\") {
             bail!(
                 "Canonicalized path resulted in UNC path: {}\n\
                 This may indicate a symlink to a network location, which is blocked.",
@@ -104,7 +105,8 @@ impl PathValidator {
         }
         
         // SECURITY: Ensure canonicalization didn't result in device path
-        if path_lower.starts_with("\\\\.\\") || path_lower.starts_with("\\\\?\\") {
+        // Allow \\?\ (extended-length paths) but block \\.\  (device paths)
+        if path_lower.starts_with("\\\\.\\") {
             bail!(
                 "Canonicalized path resulted in device path: {}\n\
                 This may indicate a symlink to a device, which is blocked.",
@@ -113,10 +115,18 @@ impl PathValidator {
         }
         
         // SECURITY: Verify path is on a local drive (C:, D:, etc.)
-        if path_str.len() >= 2 {
-            let first_char = path_str.chars().next()
+        // Handle both normal paths (C:\...) and extended-length paths (\\?\C:\...)
+        let drive_check_path = if path_str.starts_with("\\\\?\\") {
+            // For extended-length paths, skip the \\?\ prefix
+            &path_str[4..]
+        } else {
+            &path_str
+        };
+        
+        if drive_check_path.len() >= 2 {
+            let first_char = drive_check_path.chars().next()
                 .ok_or_else(|| anyhow::anyhow!("Invalid path: empty string"))?;
-            let second_char = path_str.chars().nth(1)
+            let second_char = drive_check_path.chars().nth(1)
                 .ok_or_else(|| anyhow::anyhow!("Invalid path: too short"))?;
             
             if !first_char.is_ascii_alphabetic() || second_char != ':' {

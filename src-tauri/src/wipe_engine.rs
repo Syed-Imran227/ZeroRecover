@@ -661,6 +661,22 @@ impl WipeEngine {
         // SECURITY FIX: Collect all errors instead of silently ignoring them
         self.wipe_directory_recursive(folder_path, &wipe_method, &mut total_bytes, &mut files_processed, &mut errors)?;
         
+        // Try to remove the root folder after wiping its contents
+        if errors.is_empty() {
+            // Only try to remove if no errors occurred during wiping
+            if let Err(err) = std::fs::remove_dir(folder_path) {
+                match err.kind() {
+                    std::io::ErrorKind::Other => {
+                        // Directory might not be empty due to failed file wipes or hidden files
+                        errors.push(format!("Folder contents wiped successfully, but could not remove folder '{}': Directory not empty (may contain hidden files or failed wipes)", folder_path));
+                    }
+                    _ => {
+                        errors.push(format!("Folder contents wiped successfully, but failed to remove folder '{}': {}", folder_path, err));
+                    }
+                }
+            }
+        }
+        
         let duration = start_time.elapsed();
         let mut hasher = Sha256::new();
         hasher.update(format!("{}{}{}", folder_path, method, Utc::now().timestamp()).as_bytes());
@@ -704,6 +720,7 @@ impl WipeEngine {
 
     fn wipe_directory_recursive(&self, path: &str, method: &WipeMethod, total_bytes: &mut u64, files_processed: &mut u32, errors: &mut Vec<String>) -> Result<()> {
         let entries = std::fs::read_dir(path)?;
+        let mut subdirectories = Vec::new();
         
         for entry in entries {
             let entry = match entry {
@@ -736,9 +753,29 @@ impl WipeEngine {
                     }
                 }
             } else if entry_path.is_dir() {
-                // Recursively wipe subdirectory, collecting errors
-                if let Err(err) = self.wipe_directory_recursive(entry_path_str, method, total_bytes, files_processed, errors) {
-                    errors.push(format!("Failed to process directory '{}': {}", entry_path_str, err));
+                // Store subdirectory for processing after files are wiped
+                subdirectories.push(entry_path_str.to_string());
+            }
+        }
+        
+        // Process subdirectories after all files in current directory are wiped
+        for subdir in subdirectories {
+            // Recursively wipe subdirectory, collecting errors
+            if let Err(err) = self.wipe_directory_recursive(&subdir, method, total_bytes, files_processed, errors) {
+                errors.push(format!("Failed to process directory '{}': {}", subdir, err));
+            } else {
+                // Try to remove the now-empty subdirectory
+                if let Err(err) = std::fs::remove_dir(&subdir) {
+                    // Only report as error if it's not because directory is not empty
+                    // (some files might have failed to wipe)
+                    match err.kind() {
+                        std::io::ErrorKind::Other => {
+                            // Directory might not be empty due to failed file wipes - this is OK
+                        }
+                        _ => {
+                            errors.push(format!("Failed to remove empty directory '{}': {}", subdir, err));
+                        }
+                    }
                 }
             }
         }

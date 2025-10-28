@@ -39,12 +39,13 @@ async fn get_drives() -> Result<Vec<DriveInfo>, String> {
 }
 
 #[tauri::command]
-async fn wipe_file(window: tauri::Window, file_path: String, method: String, operation_id: String) -> Result<WipeResult, String> {
+#[allow(non_snake_case)]
+async fn wipe_file(window: tauri::Window, filePath: String, method: String, operationId: String) -> Result<WipeResult, String> {
     // SECURITY: Audit log the operation attempt
     let audit_logger = AuditLogger::new();
     
     // Validate and canonicalize input path to prevent traversal
-    let validated_path = PathValidator::validate_file_path(&file_path)
+    let validated_path = PathValidator::validate_file_path(&filePath)
         .map_err(|e| {
             // Log security violation
             let _ = audit_logger.log_security_violation("Path Validation", &format!("Invalid file path: {}", e));
@@ -73,7 +74,7 @@ async fn wipe_file(window: tauri::Window, file_path: String, method: String, ope
     // Log the wipe attempt
     if let Err(e) = audit_logger.log_wipe_operation(
         "file",
-        &file_path, 
+        &filePath, 
         &method,
         0,  // bytes_wiped
         false,  // success
@@ -84,7 +85,7 @@ async fn wipe_file(window: tauri::Window, file_path: String, method: String, ope
     // Create progress reporter
     let progress_reporter = TauriProgressReporter {
         window: window.clone(),
-        operation_id: operation_id.clone(),
+        operation_id: operationId.clone(),
     };
     
     // Create wipe engine with progress reporting
@@ -98,7 +99,7 @@ async fn wipe_file(window: tauri::Window, file_path: String, method: String, ope
             // Log the error
             let _ = audit_logger.log_wipe_operation(
                 "file",
-                &file_path,
+                &filePath,
                 &method,
                 0,  // bytes_wiped
                 false,  // success
@@ -109,7 +110,7 @@ async fn wipe_file(window: tauri::Window, file_path: String, method: String, ope
     // Log the result
     let _ = audit_logger.log_wipe_operation(
         "file",
-        &file_path,
+        &filePath,
         &method,
         result.bytes_wiped,
         true,  // success
@@ -119,12 +120,13 @@ async fn wipe_file(window: tauri::Window, file_path: String, method: String, ope
 }
 
 #[tauri::command]
-async fn wipe_folder(folder_path: String, method: String) -> Result<WipeResult, String> {
+#[allow(non_snake_case)]
+async fn wipe_folder(folderPath: String, method: String) -> Result<WipeResult, String> {
     // SECURITY: Audit log the operation attempt
     let audit_logger = AuditLogger::new();
     
     // Validate and canonicalize input path to prevent traversal
-    let validated_path = PathValidator::validate_folder_path(&folder_path)
+    let validated_path = PathValidator::validate_folder_path(&folderPath)
         .map_err(|e| {
             // Log security violation
             let _ = audit_logger.log_security_violation("Path Validation", &format!("Invalid folder path: {}", e));
@@ -153,7 +155,7 @@ async fn wipe_folder(folder_path: String, method: String) -> Result<WipeResult, 
     // SECURITY: Audit log the operation result
     let _ = audit_logger.log_wipe_operation(
         "folder",
-        &folder_path,
+        &folderPath,
         &method,
         result.bytes_wiped,
         true,
@@ -163,19 +165,20 @@ async fn wipe_folder(folder_path: String, method: String) -> Result<WipeResult, 
 }
 
 #[tauri::command]
-async fn wipe_drive(drive_letter: String, method: String) -> Result<WipeResult, String> {
+#[allow(non_snake_case)]
+async fn wipe_drive(driveLetter: String, method: String) -> Result<WipeResult, String> {
     // SECURITY: Audit log the operation attempt
     let audit_logger = AuditLogger::new();
     
     // CRITICAL: Check administrator privileges before drive operations
     require_admin()
         .map_err(|e| {
-            let _ = audit_logger.log_security_violation("Admin Required", &format!("Drive wipe without admin: {}", drive_letter));
+            let _ = audit_logger.log_security_violation("Admin Required", &format!("Drive wipe without admin: {}", driveLetter));
             format!("ADMINISTRATOR PRIVILEGES REQUIRED: {}", e)
         })?;
     
     // Validate drive letter
-    let validated_letter = PathValidator::validate_drive_letter(&drive_letter)
+    let validated_letter = PathValidator::validate_drive_letter(&driveLetter)
         .map_err(|e| {
             let _ = audit_logger.log_security_violation("Drive Validation", &format!("Invalid drive: {}", e));
             format!("Invalid drive: {}", e)
@@ -189,7 +192,7 @@ async fn wipe_drive(drive_letter: String, method: String) -> Result<WipeResult, 
     // SECURITY: Audit log the operation result
     let _ = audit_logger.log_wipe_operation(
         "drive",
-        &format!("{}:", drive_letter),
+        &format!("{}:", driveLetter),
         &method,
         result.bytes_wiped,
         true,
@@ -205,12 +208,13 @@ async fn generate_certificate(result: WipeResult) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn check_hidden_areas(drive_letter: String) -> Result<String, String> {
+#[allow(non_snake_case)]
+async fn check_hidden_areas(driveLetter: String) -> Result<String, String> {
     // Check admin privileges for low-level drive operations
     require_admin()
         .map_err(|e| format!("ADMINISTRATOR PRIVILEGES REQUIRED: {}", e))?;
     
-    let validated_letter = PathValidator::validate_drive_letter(&drive_letter)
+    let validated_letter = PathValidator::validate_drive_letter(&driveLetter)
         .map_err(|e| format!("Invalid drive: {}", e))?;
     HiddenStorageManager::get_comprehensive_drive_info(&validated_letter)
         .map_err(|e| format!("Failed to check hidden areas: {}", e))
@@ -230,6 +234,7 @@ async fn check_admin_status() -> Result<bool, String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             get_drives,
             wipe_file,

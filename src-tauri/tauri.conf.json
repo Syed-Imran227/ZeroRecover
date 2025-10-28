@@ -19,7 +19,21 @@
         "minWidth": 800,
         "minHeight": 600
       }
-    ]
+    ],
+    "security": {
+      "capabilities": [
+        {
+          "identifier": "main-capability",
+          "description": "Capability for main window",
+          "windows": ["main"],
+          "permissions": [
+            "core:default",
+            "dialog:default",
+            "dialog:allow-open"
+          ]
+        }
+      ]
+    }
   },
   "bundle": {
     "active": true,

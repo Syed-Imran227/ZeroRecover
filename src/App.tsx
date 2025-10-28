@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { AlertTriangle, HardDrive, File, Folder, Shield, CheckCircle, XCircle } from 'lucide-react';
 import { DriveInfo, WipeResult, WipeMethod, WipeStatus } from './types';
@@ -57,11 +58,41 @@ function App() {
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; currentTarget: string } | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [adminCheckComplete, setAdminCheckComplete] = useState<boolean>(false);
+  const [currentOperationId, setCurrentOperationId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Check if we're running in Tauri context
+    console.log('Tauri context check:', typeof window !== 'undefined' && '__TAURI__' in window);
+    
     loadDrives();
     checkAdminStatus();
-  }, []);
+    
+    // Set up event listener for wipe progress updates
+    const setupProgressListener = async () => {
+      const unlisten = await listen('wipe-progress', (event) => {
+        const [operationId, progress] = event.payload as [string, any];
+        // Only update progress if this matches the current operation
+        if (operationId === currentOperationId) {
+          setWipeStatus(prev => ({
+            ...prev,
+            progress: progress
+          }));
+        }
+      });
+      
+      // Return cleanup function
+      return unlisten;
+    };
+    
+    let cleanup: (() => void) | undefined;
+    setupProgressListener().then(unlisten => {
+      cleanup = unlisten;
+    });
+    
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [currentOperationId]);
 
   // SECURITY: Cooldown timer to update remaining time
   useEffect(() => {
@@ -124,6 +155,7 @@ function App() {
 
   const handleFileSelect = async () => {
     try {
+      console.log('Opening file dialog...');
       const selected = await open({
         multiple: true,
         filters: [{
@@ -132,25 +164,44 @@ function App() {
         }]
       });
       
+      console.log('File dialog result:', selected);
+      
       if (selected && Array.isArray(selected)) {
         setSelectedFiles(selected as string[]);
+        console.log('Files selected:', selected);
+      } else if (selected === null) {
+        console.log('File selection cancelled by user');
+      } else {
+        console.log('Unexpected file selection result:', selected);
       }
     } catch (error) {
       console.error('Failed to select files:', error);
+      // Don't show dialog errors in wipe status - they're not wipe errors
+      alert(`Failed to open file dialog: ${error}`);
     }
   };
 
   const handleFolderSelect = async () => {
     try {
+      console.log('Opening folder dialog...');
       const selected = await open({
         directory: true
       });
       
+      console.log('Folder dialog result:', selected);
+      
       if (selected && typeof selected === 'string') {
         setSelectedFolder(selected);
+        console.log('Folder selected:', selected);
+      } else if (selected === null) {
+        console.log('Folder selection cancelled by user');
+      } else {
+        console.log('Unexpected folder selection result:', selected);
       }
     } catch (error) {
       console.error('Failed to select folder:', error);
+      // Don't show dialog errors in wipe status - they're not wipe errors
+      alert(`Failed to open folder dialog: ${error}`);
     }
   };
 
@@ -179,6 +230,10 @@ function App() {
       return;
     }
 
+    // Generate operation ID for this wipe session
+    const sessionOperationId = `session_${Date.now()}`;
+    setCurrentOperationId(sessionOperationId);
+    
     setWipeStatus({
       isWiping: true,
       progress: null,
@@ -202,8 +257,9 @@ function App() {
           const filePath = selectedFiles[i];
           setBatchProgress({ current: i + 1, total: selectedFiles.length, currentTarget: filePath.split('\\').pop() || filePath });
           const r = await invoke<WipeResult>('wipe_file', {
-            filePath,
-            method: selectedMethod
+            filePath: filePath,
+            method: selectedMethod,
+            operationId: sessionOperationId
           });
           results.push(r);
           const certPath = await invoke<string>('generate_certificate', { result: r });
@@ -244,6 +300,9 @@ function App() {
         error: null,
         certificatePath: certificatePath
       });
+      
+      // Clear operation ID when complete
+      setCurrentOperationId(null);
 
     } catch (error) {
       setWipeStatus({
@@ -253,6 +312,9 @@ function App() {
         error: normalizeError(error),
         certificatePath: null
       });
+      
+      // Clear operation ID on error
+      setCurrentOperationId(null);
     }
   };
 
@@ -364,6 +426,9 @@ function App() {
             >
               Browse Files
             </button>
+            <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '5px' }}>
+              Note: File dialog only works in the desktop app, not in browser preview
+            </div>
             {selectedFiles.length > 0 && (
               <div style={{ marginTop: '10px' }}>
                 <strong>Selected Files ({selectedFiles.length}):</strong>
@@ -396,6 +461,9 @@ function App() {
             >
               Browse Folder
             </button>
+            <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '5px' }}>
+              Note: Folder dialog only works in the desktop app, not in browser preview
+            </div>
             {selectedFolder && (
               <div style={{ marginTop: '10px', color: '#666' }}>
                 <strong>Selected:</strong> {selectedFolder}
