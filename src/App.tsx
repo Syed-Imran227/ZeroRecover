@@ -277,12 +277,14 @@ function App() {
       } else if (activeTab === 'folder' && selectedFolder) {
         result = await invoke<WipeResult>('wipe_folder', {
           folderPath: selectedFolder,
-          method: selectedMethod
+          method: selectedMethod,
+          operationId: sessionOperationId
         });
       } else if (activeTab === 'drive' && selectedDrive) {
         result = await invoke<WipeResult>('wipe_drive', {
           driveLetter: selectedDrive,
-          method: selectedMethod
+          method: selectedMethod,
+          operationId: sessionOperationId
         });
       } else {
         throw new Error('Please select files, folder, or drive to wipe');

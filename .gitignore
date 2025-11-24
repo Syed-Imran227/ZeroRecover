@@ -48,6 +48,15 @@ $RECYCLE.BIN/
 src-tauri/target/
 **/*.rs.bk
 
+# Ignore top-level Rust build artifacts
+target/
+
+# Backup files
+*.bak
+
+# Vite cache
+.vite/
+
 # Tauri specific
 src-tauri/gen/
 src-tauri/dist/

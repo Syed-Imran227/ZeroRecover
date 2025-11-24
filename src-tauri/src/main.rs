@@ -40,7 +40,7 @@ async fn get_drives() -> Result<Vec<DriveInfo>, String> {
 
 #[tauri::command]
 #[allow(non_snake_case)]
-async fn wipe_file(window: tauri::Window, filePath: String, method: String, operationId: String) -> Result<WipeResult, String> {
+async fn wipe_file(window: tauri::Window, filePath: String, method: String, operationId: Option<String>) -> Result<WipeResult, String> {
     // SECURITY: Audit log the operation attempt
     let audit_logger = AuditLogger::new();
     
@@ -85,7 +85,7 @@ async fn wipe_file(window: tauri::Window, filePath: String, method: String, oper
     // Create progress reporter
     let progress_reporter = TauriProgressReporter {
         window: window.clone(),
-        operation_id: operationId.clone(),
+        operation_id: operationId.clone().unwrap_or_default(),
     };
     
     // Create wipe engine with progress reporting
